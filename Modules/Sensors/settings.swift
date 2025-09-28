@@ -25,6 +25,7 @@ internal class Settings: NSStackView, Settings_v {
     private var rollingAverageType: RollingAverageType = .sma
     private var rollingAveragePeriod: Int = 60
     private var rollingAverageAlpha: Double = 0.3
+    private var rollingAverageSection: PreferencesSection?
     
     public var callback: (() -> Void) = {}
     public var HIDcallback: (() -> Void) = {}
@@ -108,6 +109,15 @@ internal class Settings: NSStackView, Settings_v {
         self.addArrangedSubview(sensorsPrefs)
         
         // Rolling average settings section
+        self.createRollingAverageSection()
+    }
+    
+    private func createRollingAverageSection() {
+        // Remove existing rolling average section if it exists
+        if let existingSection = self.rollingAverageSection {
+            existingSection.removeFromSuperview()
+        }
+        
         var rollingRows: [PreferencesRow] = [
             PreferencesRow(localizedString("Enable rolling average"), component: switchView(
                 action: #selector(self.toggleRollingAverage),
@@ -134,6 +144,7 @@ internal class Settings: NSStackView, Settings_v {
         }
         
         let rollingPrefs = PreferencesSection(rollingRows, label: localizedString("Rolling Average System Total"))
+        self.rollingAverageSection = rollingPrefs
         self.addArrangedSubview(rollingPrefs)
     }
     
@@ -264,11 +275,8 @@ internal class Settings: NSStackView, Settings_v {
             Store.shared.set(key: "\(self.title)_rollingAverageType", value: self.rollingAverageType.rawValue)
             self.rollingAverageCallback()
             
-            // Reload settings to show/hide EMA alpha setting
-            DispatchQueue.main.async {
-                self.removeFromSuperview()
-                // This would need a proper reload mechanism, but for now just trigger callback
-            }
+            // Recreate the rolling average section to show/hide EMA settings
+            self.createRollingAverageSection()
         }
     }
     

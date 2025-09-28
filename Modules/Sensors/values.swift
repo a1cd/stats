@@ -664,8 +664,8 @@ public class RollingAverageSensor: Sensor_p, Codable {
     
     public func addSample(_ value: Double) {
         let now = Date()
-        let deltaTime = lastSampleTime?.timeIntervalSince(now) ?? 0
-        let sample = PowerSample(value: value, timestamp: now, deltaTime: abs(deltaTime))
+        let deltaTime = lastSampleTime != nil ? now.timeIntervalSince(lastSampleTime!) : 1.0
+        let sample = PowerSample(value: value, timestamp: now, deltaTime: deltaTime)
         
         samples.append(sample)
         lastSampleTime = now

@@ -370,6 +370,23 @@
 "Right fan" = "Right";
 "Fastest fan" = "Fastest";
 "Sensor to show" = "Sensor to show";
+"Enable rolling average" = "Enable rolling average";
+"Algorithm type" = "Algorithm type";
+"Simple Moving Average (SMA)" = "Simple Moving Average (SMA)";
+"Exponential Moving Average (EMA)" = "Exponential Moving Average (EMA)";
+"Sample count" = "Sample count";
+"30 samples" = "30 samples";
+"60 samples" = "60 samples";
+"120 samples" = "120 samples";
+"300 samples" = "300 samples";
+"600 samples" = "600 samples";
+"Smoothing factor" = "Smoothing factor";
+"0.1 (slow)" = "0.1 (slow)";
+"0.2" = "0.2";
+"0.3" = "0.3";
+"0.5" = "0.5";
+"0.8 (fast)" = "0.8 (fast)";
+"Rolling Average System Total" = "Rolling Average System Total";
 
 // Network
 "Uploading" = "Upload";
