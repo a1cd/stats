@@ -96,6 +96,7 @@ public struct Sensor_w: Codable {
     private enum Typ: Int, Codable {
         case sensor
         case fan
+        case rollingAverage
     }
     
     init(_ sensor: Sensor_p) {
@@ -108,6 +109,7 @@ public struct Sensor_w: Codable {
         switch base {
         case .sensor: self.sensor = try container.decode(Sensor.self, forKey: .payload)
         case .fan: self.sensor = try container.decode(Fan.self, forKey: .payload)
+        case .rollingAverage: self.sensor = try container.decode(RollingAverageSensor.self, forKey: .payload)
         }
     }
     
@@ -119,6 +121,9 @@ public struct Sensor_w: Codable {
             try container.encode(payload, forKey: .payload)
         case let payload as Fan:
             try container.encode(Typ.fan, forKey: .base)
+            try container.encode(payload, forKey: .payload)
+        case let payload as RollingAverageSensor:
+            try container.encode(Typ.rollingAverage, forKey: .base)
             try container.encode(payload, forKey: .payload)
         default: break
         }
@@ -550,3 +555,174 @@ internal let HIDSensorsList: [Sensor] = [
     Sensor(key: "gas gauge battery", name: "Battery", group: .sensor, type: .temperature, platforms: Platform.all),
     Sensor(key: "NAND CH% temp", name: "Disk %s", group: .GPU, type: .temperature, platforms: Platform.all)
 ]
+
+// MARK: - Rolling Average Settings
+
+public enum RollingAverageType: String, CaseIterable, Codable {
+    case sma = "SMA"
+    case ema = "EMA"
+    
+    public var displayName: String {
+        switch self {
+        case .sma: return "Simple Moving Average (SMA)"
+        case .ema: return "Exponential Moving Average (EMA)"
+        }
+    }
+}
+
+public let RollingAverageTypes: [KeyValue_t] = [
+    KeyValue_t(key: "SMA", value: "Simple Moving Average (SMA)"),
+    KeyValue_t(key: "EMA", value: "Exponential Moving Average (EMA)")
+]
+
+public let RollingAveragePeriods: [KeyValue_t] = [
+    KeyValue_t(key: "30", value: "30 samples"),
+    KeyValue_t(key: "60", value: "60 samples"),
+    KeyValue_t(key: "120", value: "120 samples"),
+    KeyValue_t(key: "300", value: "300 samples"),
+    KeyValue_t(key: "600", value: "600 samples")
+]
+
+public let EMAAlphaValues: [KeyValue_t] = [
+    KeyValue_t(key: "0.1", value: "0.1 (slow)"),
+    KeyValue_t(key: "0.2", value: "0.2"),
+    KeyValue_t(key: "0.3", value: "0.3"),
+    KeyValue_t(key: "0.5", value: "0.5"),
+    KeyValue_t(key: "0.8", value: "0.8 (fast)")
+]
+
+// MARK: - Rolling Average Sensor
+
+public struct PowerSample {
+    public let value: Double
+    public let timestamp: Date
+    public let deltaTime: TimeInterval
+    
+    public init(value: Double, timestamp: Date = Date(), deltaTime: TimeInterval = 0) {
+        self.value = value
+        self.timestamp = timestamp
+        self.deltaTime = deltaTime
+    }
+}
+
+public class RollingAverageSensor: Sensor_p, Codable {
+    public let key: String
+    public let name: String
+    public var value: Double = 0
+    public let group: SensorGroup = .sensor
+    public let type: SensorType = .power
+    public let platforms: [Platform] = Platform.all
+    public let isComputed: Bool = true
+    public let average: Bool = false
+    
+    // Sensor_p computed properties
+    public var state: Bool {
+        Store.shared.bool(key: "sensor_\(self.key)", defaultValue: false)
+    }
+    public var popupState: Bool {
+        Store.shared.bool(key: "sensor_\(self.key)_popup", defaultValue: true)
+    }
+    public var notificationThreshold: String {
+        Store.shared.string(key: "sensor_\(self.key)_notification", defaultValue: "")
+    }
+    
+    public var unit: String { "W" }
+    public var miniUnit: String { "W" }
+    public var localValue: Double { value }
+    
+    public var formattedValue: String {
+        let val = value >= 100 ? "\(Int(value))" : String(format: "%.2f", value)
+        return "\(val)\(unit)"
+    }
+    public var formattedPopupValue: String {
+        let val = value >= 100 ? "\(Int(value))" : String(format: "%.2f", value)
+        return "\(val)\(unit)"
+    }
+    public var formattedMiniValue: String {
+        let val = value >= 9.95 ? "\(Int(round(value)))" : String(format: "%.1f", value)
+        return "\(val)\(unit)"
+    }
+    
+    private var samples: [PowerSample] = []
+    private var lastSampleTime: Date?
+    private let maxSamples: Int
+    private let averageType: RollingAverageType
+    private let alpha: Double // EMA smoothing factor
+    private var emaValue: Double?
+    
+    private enum CodingKeys: String, CodingKey {
+        case key, name, value, maxSamples, averageType, alpha, emaValue
+    }
+    
+    public init(key: String, name: String, maxSamples: Int = 60, averageType: RollingAverageType = .sma, alpha: Double = 0.3) {
+        self.key = key
+        self.name = name
+        self.maxSamples = maxSamples
+        self.averageType = averageType
+        self.alpha = alpha
+    }
+    
+    public func addSample(_ value: Double) {
+        let now = Date()
+        let deltaTime = lastSampleTime?.timeIntervalSince(now) ?? 0
+        let sample = PowerSample(value: value, timestamp: now, deltaTime: abs(deltaTime))
+        
+        samples.append(sample)
+        lastSampleTime = now
+        
+        // Keep only the most recent samples
+        if samples.count > maxSamples {
+            samples.removeFirst(samples.count - maxSamples)
+        }
+        
+        // Update the sensor value
+        self.value = calculateAverage()
+    }
+    
+    private func calculateAverage() -> Double {
+        guard !samples.isEmpty else { return 0 }
+        
+        switch averageType {
+        case .sma:
+            return calculateSMA()
+        case .ema:
+            return calculateEMA()
+        }
+    }
+    
+    private func calculateSMA() -> Double {
+        // Time-weighted simple moving average
+        let totalWeight = samples.reduce(0) { $0 + max($1.deltaTime, 1.0) }
+        guard totalWeight > 0 else {
+            return samples.reduce(0) { $0 + $1.value } / Double(samples.count)
+        }
+        
+        let weightedSum = samples.reduce(0) { sum, sample in
+            let weight = max(sample.deltaTime, 1.0)
+            return sum + (sample.value * weight)
+        }
+        
+        return weightedSum / totalWeight
+    }
+    
+    private func calculateEMA() -> Double {
+        guard let lastSample = samples.last else { return 0 }
+        
+        if emaValue == nil {
+            // Initialize EMA with the first sample
+            emaValue = lastSample.value
+            return lastSample.value
+        }
+        
+        // Time-adjusted alpha based on delta time
+        // If sampling is slower, adjust alpha to be more responsive
+        let adjustedAlpha = min(1.0, alpha * max(1.0, lastSample.deltaTime / 3.0))
+        
+        emaValue = (adjustedAlpha * lastSample.value) + ((1 - adjustedAlpha) * emaValue!)
+        return emaValue!
+    }
+    
+    public func configure(maxSamples: Int, averageType: RollingAverageType, alpha: Double) {
+        // This would require recreating the sensor, but we'll handle it through settings
+    }
+}
