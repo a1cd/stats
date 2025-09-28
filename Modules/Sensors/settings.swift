@@ -20,9 +20,17 @@ internal class Settings: NSStackView, Settings_v {
     private var unknownSensorsState: Bool = false
     private var fanValueState: FanValue = .percentage
     
+    // Rolling average settings
+    private var rollingAverageEnabled: Bool = false
+    private var rollingAverageType: RollingAverageType = .sma
+    private var rollingAveragePeriod: Int = 60
+    private var rollingAverageAlpha: Double = 0.3
+    private var rollingAverageSection: PreferencesSection?
+    
     public var callback: (() -> Void) = {}
     public var HIDcallback: (() -> Void) = {}
     public var unknownCallback: (() -> Void) = {}
+    public var rollingAverageCallback: (() -> Void) = {}
     public var setInterval: ((_ value: Int) -> Void) = {_ in }
     public var selectedHandler: (String) -> Void = {_ in }
     
@@ -47,6 +55,13 @@ internal class Settings: NSStackView, Settings_v {
         self.unknownSensorsState = Store.shared.bool(key: "\(self.title)_unknown", defaultValue: self.unknownSensorsState)
         self.fanValueState = FanValue(rawValue: Store.shared.string(key: "\(self.title)_fanValue", defaultValue: self.fanValueState.rawValue)) ?? .percentage
         self.selectedSensor = Store.shared.string(key: "\(self.title)_sensor", defaultValue: self.selectedSensor)
+        
+        // Load rolling average settings
+        self.rollingAverageEnabled = Store.shared.bool(key: "\(self.title)_rollingAverage", defaultValue: self.rollingAverageEnabled)
+        self.rollingAverageType = RollingAverageType(rawValue: Store.shared.string(key: "\(self.title)_rollingAverageType", defaultValue: self.rollingAverageType.rawValue)) ?? .sma
+        self.rollingAveragePeriod = Store.shared.int(key: "\(self.title)_rollingAveragePeriod", defaultValue: self.rollingAveragePeriod)
+        let alphaString = Store.shared.string(key: "\(self.title)_rollingAverageAlpha", defaultValue: "\(self.rollingAverageAlpha)")
+        self.rollingAverageAlpha = Double(alphaString) ?? 0.3
         
         self.addArrangedSubview(PreferencesSection([
             PreferencesRow(localizedString("Update interval"), component: selectView(
@@ -92,6 +107,48 @@ internal class Settings: NSStackView, Settings_v {
         let sensorsPrefs = PreferencesSection(sensorsRows)
         self.sensorsPrefs = sensorsPrefs
         self.addArrangedSubview(sensorsPrefs)
+        
+        // Rolling average settings section
+        self.createRollingAverageSection()
+    }
+    
+    private func createRollingAverageSection() {
+        // Remove existing rolling average section if it exists
+        if let existingSection = self.rollingAverageSection {
+            existingSection.removeFromSuperview()
+        }
+        
+        var rollingRows: [PreferencesRow] = [
+            PreferencesRow(localizedString("Enable rolling average"), component: switchView(
+                action: #selector(self.toggleRollingAverage),
+                state: self.rollingAverageEnabled
+            )),
+            PreferencesRow(localizedString("Algorithm type"), component: selectView(
+                action: #selector(self.toggleRollingAverageType),
+                items: rollingAverageTypes,
+                selected: self.rollingAverageType.rawValue
+            )),
+            PreferencesRow(localizedString("Sample count"), component: selectView(
+                action: #selector(self.toggleRollingAveragePeriod),
+                items: rollingAveragePeriods,
+                selected: "\(self.rollingAveragePeriod)"
+            ))
+        ]
+        
+        if self.rollingAverageType == .ema {
+            rollingRows.append(PreferencesRow(localizedString("Smoothing factor"), component: selectView(
+                action: #selector(self.toggleRollingAverageAlpha),
+                items: emaAlphaValues,
+                selected: "\(self.rollingAverageAlpha)"
+            )))
+        }
+        
+        let rollingPrefs = PreferencesSection(label: localizedString("Rolling Average System Total"))
+        rollingRows.forEach { row in
+            rollingPrefs.add(row)
+        }
+        self.rollingAverageSection = rollingPrefs
+        self.addArrangedSubview(rollingPrefs)
     }
     
     required init?(coder: NSCoder) {
@@ -205,5 +262,40 @@ internal class Settings: NSStackView, Settings_v {
         self.selectedSensor = id
         Store.shared.set(key: "\(self.title)_sensor", value: self.selectedSensor)
         self.selectedHandler(self.selectedSensor)
+    }
+    
+    // MARK: - Rolling Average Actions
+    
+    @objc private func toggleRollingAverage(_ sender: NSControl) {
+        self.rollingAverageEnabled = controlState(sender)
+        Store.shared.set(key: "\(self.title)_rollingAverage", value: self.rollingAverageEnabled)
+        self.rollingAverageCallback()
+    }
+    
+    @objc private func toggleRollingAverageType(_ sender: NSMenuItem) {
+        if let key = sender.representedObject as? String, let value = RollingAverageType(rawValue: key) {
+            self.rollingAverageType = value
+            Store.shared.set(key: "\(self.title)_rollingAverageType", value: self.rollingAverageType.rawValue)
+            self.rollingAverageCallback()
+            
+            // Recreate the rolling average section to show/hide EMA settings
+            self.createRollingAverageSection()
+        }
+    }
+    
+    @objc private func toggleRollingAveragePeriod(_ sender: NSMenuItem) {
+        if let key = sender.representedObject as? String, let value = Int(key) {
+            self.rollingAveragePeriod = value
+            Store.shared.set(key: "\(self.title)_rollingAveragePeriod", value: self.rollingAveragePeriod)
+            self.rollingAverageCallback()
+        }
+    }
+    
+    @objc private func toggleRollingAverageAlpha(_ sender: NSMenuItem) {
+        if let key = sender.representedObject as? String, let value = Double(key) {
+            self.rollingAverageAlpha = value
+            Store.shared.set(key: "\(self.title)_rollingAverageAlpha", value: "\(self.rollingAverageAlpha)")
+            self.rollingAverageCallback()
+        }
     }
 }

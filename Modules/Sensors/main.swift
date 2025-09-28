@@ -83,6 +83,9 @@ public class Sensors: Module {
             self?.selectedSensor = value
             self?.sensorsReader?.read()
         }
+        self.settingsView.rollingAverageCallback = { [weak self] in
+            self?.sensorsReader?.reinitializeRollingAverage()
+        }
         
         self.setReaders([self.sensorsReader])
     }

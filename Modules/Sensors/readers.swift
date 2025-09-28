@@ -29,6 +29,22 @@ internal class SensorsReader: Reader<Sensors_List> {
     private var subscription: IOReportSubscriptionRef? = nil
     private var powers: (CPU: Double, GPU: Double, ANE: Double, RAM: Double, PCI: Double) = (0.0, 0.0, 0.0, 0.0, 0.0)
     
+    // Rolling average sensor
+    private var rollingAverageSensor: RollingAverageSensor?
+    private var rollingAverageEnabled: Bool {
+        Store.shared.bool(key: "Sensors_rollingAverage", defaultValue: false)
+    }
+    private var rollingAverageType: RollingAverageType {
+        RollingAverageType(rawValue: Store.shared.string(key: "Sensors_rollingAverageType", defaultValue: "SMA")) ?? .sma
+    }
+    private var rollingAveragePeriod: Int {
+        Store.shared.int(key: "Sensors_rollingAveragePeriod", defaultValue: 60)
+    }
+    private var rollingAverageAlpha: Double {
+        let alphaString = Store.shared.string(key: "Sensors_rollingAverageAlpha", defaultValue: "0.3")
+        return Double(alphaString) ?? 0.3
+    }
+    
     init(callback: @escaping (T?) -> Void = {_ in }) {
         self.unknownSensorsState = Store.shared.bool(key: "Sensors_unknown", defaultValue: false)
         super.init(.sensors, callback: callback)
@@ -236,6 +252,16 @@ internal class SensorsReader: Reader<Sensors_List> {
                 }
             }
             
+            // Update rolling average sensor
+            if let rollingSensor = self.rollingAverageSensor {
+                rollingSensor.addSample(PSTRSensor.value)
+                
+                // Update the sensor in the list
+                if let rollingIdx = self.list.sensors.firstIndex(where: {$0.key == "Rolling Average System Total"}) {
+                    self.list.sensors[rollingIdx] = rollingSensor
+                }
+            }
+            
             self.lastRead = Date()
         }
         
@@ -290,6 +316,20 @@ internal class SensorsReader: Reader<Sensors_List> {
         if sensors.contains(where: { $0.key == "PSTR"}) {
             list.append(Sensor(key: "Total System Consumption", name: "Total System Consumption", value: 0, group: .sensor, type: .energy, platforms: Platform.all, isComputed: true))
             list.append(Sensor(key: "Average System Total", name: "Average System Total", value: 0, group: .sensor, type: .power, platforms: Platform.all, isComputed: true))
+            
+            // Initialize rolling average sensor if enabled
+            if rollingAverageEnabled {
+                self.rollingAverageSensor = RollingAverageSensor(
+                    key: "Rolling Average System Total",
+                    name: "Rolling Average System Total",
+                    maxSamples: rollingAveragePeriod,
+                    averageType: rollingAverageType,
+                    alpha: rollingAverageAlpha
+                )
+                if let rollingSensor = self.rollingAverageSensor {
+                    list.append(rollingSensor)
+                }
+            }
         }
         
         return list.filter({ (s: Sensor_p) -> Bool in
@@ -307,6 +347,46 @@ internal class SensorsReader: Reader<Sensors_List> {
     
     public func unknownCallback() {
         self.unknownSensorsState = Store.shared.bool(key: "Sensors_unknown", defaultValue: false)
+    }
+    
+    public func reinitializeRollingAverage() {
+        let wasEnabled = rollingAverageSensor != nil
+        let isEnabled = rollingAverageEnabled
+        
+        if wasEnabled && !isEnabled {
+            // Remove rolling average sensor
+            self.list.sensors.removeAll { $0.key == "Rolling Average System Total" }
+            self.rollingAverageSensor = nil
+        } else if !wasEnabled && isEnabled {
+            // Add rolling average sensor
+            if let pstrSensor = self.list.sensors.first(where: { $0.key == "PSTR"}) {
+                self.rollingAverageSensor = RollingAverageSensor(
+                    key: "Rolling Average System Total",
+                    name: "Rolling Average System Total",
+                    maxSamples: rollingAveragePeriod,
+                    averageType: rollingAverageType,
+                    alpha: rollingAverageAlpha
+                )
+                if let rollingSensor = self.rollingAverageSensor {
+                    self.list.sensors.append(rollingSensor)
+                }
+            }
+        } else if wasEnabled && isEnabled {
+            // Update existing rolling average sensor settings
+            if self.list.sensors.contains(where: { $0.key == "PSTR"}) {
+                self.rollingAverageSensor = RollingAverageSensor(
+                    key: "Rolling Average System Total",
+                    name: "Rolling Average System Total",
+                    maxSamples: rollingAveragePeriod,
+                    averageType: rollingAverageType,
+                    alpha: rollingAverageAlpha
+                )
+                if let rollingSensor = self.rollingAverageSensor,
+                   let rollingIdx = self.list.sensors.firstIndex(where: {$0.key == "Rolling Average System Total"}) {
+                    self.list.sensors[rollingIdx] = rollingSensor
+                }
+            }
+        }
     }
 }
 
