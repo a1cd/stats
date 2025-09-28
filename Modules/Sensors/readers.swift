@@ -373,7 +373,7 @@ internal class SensorsReader: Reader<Sensors_List> {
             }
         } else if wasEnabled && isEnabled {
             // Update existing rolling average sensor settings
-            if let pstrSensor = self.list.sensors.first(where: { $0.key == "PSTR"}) {
+            if self.list.sensors.contains(where: { $0.key == "PSTR"}) {
                 self.rollingAverageSensor = RollingAverageSensor(
                     key: "Rolling Average System Total",
                     name: "Rolling Average System Total",

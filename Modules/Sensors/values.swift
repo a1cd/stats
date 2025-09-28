@@ -570,12 +570,12 @@ public enum RollingAverageType: String, CaseIterable, Codable {
     }
 }
 
-public let RollingAverageTypes: [KeyValue_t] = [
+public let rollingAverageTypes: [KeyValue_t] = [
     KeyValue_t(key: "SMA", value: "Simple Moving Average (SMA)"),
     KeyValue_t(key: "EMA", value: "Exponential Moving Average (EMA)")
 ]
 
-public let RollingAveragePeriods: [KeyValue_t] = [
+public let rollingAveragePeriods: [KeyValue_t] = [
     KeyValue_t(key: "30", value: "30 samples"),
     KeyValue_t(key: "60", value: "60 samples"),
     KeyValue_t(key: "120", value: "120 samples"),
@@ -583,7 +583,7 @@ public let RollingAveragePeriods: [KeyValue_t] = [
     KeyValue_t(key: "600", value: "600 samples")
 ]
 
-public let EMAAlphaValues: [KeyValue_t] = [
+public let emaAlphaValues: [KeyValue_t] = [
     KeyValue_t(key: "0.1", value: "0.1 (slow)"),
     KeyValue_t(key: "0.2", value: "0.2"),
     KeyValue_t(key: "0.3", value: "0.3"),

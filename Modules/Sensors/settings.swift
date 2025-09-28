@@ -125,12 +125,12 @@ internal class Settings: NSStackView, Settings_v {
             )),
             PreferencesRow(localizedString("Algorithm type"), component: selectView(
                 action: #selector(self.toggleRollingAverageType),
-                items: RollingAverageTypes,
+                items: rollingAverageTypes,
                 selected: self.rollingAverageType.rawValue
             )),
             PreferencesRow(localizedString("Sample count"), component: selectView(
                 action: #selector(self.toggleRollingAveragePeriod),
-                items: RollingAveragePeriods,
+                items: rollingAveragePeriods,
                 selected: "\(self.rollingAveragePeriod)"
             ))
         ]
@@ -138,12 +138,15 @@ internal class Settings: NSStackView, Settings_v {
         if self.rollingAverageType == .ema {
             rollingRows.append(PreferencesRow(localizedString("Smoothing factor"), component: selectView(
                 action: #selector(self.toggleRollingAverageAlpha),
-                items: EMAAlphaValues,
+                items: emaAlphaValues,
                 selected: "\(self.rollingAverageAlpha)"
             )))
         }
         
-        let rollingPrefs = PreferencesSection(rollingRows, label: localizedString("Rolling Average System Total"))
+        let rollingPrefs = PreferencesSection(label: localizedString("Rolling Average System Total"))
+        rollingRows.forEach { row in
+            rollingPrefs.add(row)
+        }
         self.rollingAverageSection = rollingPrefs
         self.addArrangedSubview(rollingPrefs)
     }
